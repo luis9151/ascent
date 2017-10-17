@@ -134,7 +134,7 @@ def heuristic_template(img,o1):
     return np.uint8(img)
 
 
-def morph_op(img):
+def morphological_operations(img):
     kernel = np.ones((3, 3), np.uint8)
     morph = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
     morph = cv2.morphologyEx(morph, cv2.MORPH_CLOSE, kernel)
@@ -149,27 +149,27 @@ def main():
     set_dirs(f,set)
 
     i = 0
-    for n in sorted(glob.glob(dir_read+'/*.png')):
-        im_rgb = cv2.imread(n)
-        n = n[-13:-4]
+    for file_name in sorted(glob.glob(dir_read+'/*.png')):
+        im_rgb = cv2.imread(file_name)
+        file_name = file_name[-13:-4]
         img = rgb_2_bw(im_rgb)
 
-        edges = img_pre_process(img)
-        edges = heuristic_template(edges, 0)
-        morph = morph_op(edges)
+        process_img = img_pre_process(img)
+        process_img = heuristic_template(process_img, 0)
+        process_img = morphological_operations(process_img)
 
-        lanes = Hough_transform(morph, img, 50, 50, 50, n)
-        if sum(sum(lanes)) == 0:
+        process_img = Hough_transform(process_img, img, 50, 50, 50, file_name)
+        if sum(sum(process_img)) == 0:
             continue
         template = draw_template(img,25,400)
-        box,xy = templ_matching(lanes,template,img)
+        process_img,xy = templ_matching(process_img,template,img)
 
-        edges = img_pre_process(box)
-        final = Hough_transform(edges, img,70,50,10,n)
+        process_img = img_pre_process(process_img)
+        final = Hough_transform(process_img, img,70,50,10,file_name)
         if sum(sum(final)) == 0:
             continue
-        align_lanes(im_rgb, final[:edges.shape[0],:edges.shape[1]], xy, n)
-        print('Success for image #{}'.format(n))
+        align_lanes(im_rgb, final[:process_img.shape[0],:process_img.shape[1]], xy, file_name)
+        print('Success for image #{}'.format(file_name))
         i += 1
         if i>num_im-1:
             break
