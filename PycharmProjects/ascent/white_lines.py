@@ -2,14 +2,23 @@ import numpy as np
 import os
 import cv2
 from matplotlib import pyplot as plt
+import glob
 
-dir = 'D:/Luis/Downloads/data_road/training/image_2'
+
+def set_dirs(f = 'D:/Luis/Downloads'):
+    which_dir = ['training','testing']
+    global dir_read
+    dir_read = '{}/data_road/{}/image_2/'.format(f,which_dir[0])
+    global dir_write
+    dir_write = dir_read+'results/'
+    if not os.path.isdir(dir_write):
+        os.mkdir(dir_write)
 
 
 def load_im(num):
     file = 'um_000'
     num = str(num).zfill(3)
-    im_rgb = cv2.imread(dir + '/' + file + num + '.png')
+    im_rgb = cv2.imread(dir_write + '/' + file + num + '.png')
     return im_rgb
 
 def rgb_2_bw(im_rgb):
@@ -24,22 +33,22 @@ def img_pre_process(edges):
     k = 9
     k2 = 3
     edges = cv2.GaussianBlur(edges, (k, k), 0)
-    #edges = cv2.Canny(edges, 150, 200,L2gradient=False)
-    #edges = cv2.Sobel(edges, -1, 1, 0, ksize=3)
     edges = cv2.Sobel(edges, -1, k2-2, 0, ksize=k2)
     edges = cv2.Canny(edges, 150, 200,L2gradient=False)
-    #edges = cv2.GaussianBlur(edges, (k, k), 0)
-    cv2.imwrite(dir + '/' + 'canny.png', edges)
+    #cv2.imwrite(dir_write + '/' + 'canny.png', edges)
     return edges
 
 
-def Hough_transform(edges, img, thresh, min_ll, max_lg,f):
+def Hough_transform(edges, img, thresh, min_ll, max_lg,f,n):
     lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180, threshold=thresh, minLineLength=min_ll, maxLineGap=max_lg)
     lanes = np.zeros(img.shape)
-    for line in lines:
-        x1, y1, x2, y2 = line[0]
-        cv2.line(lanes, (x1, y1), (x2, y2), (255), 2)
-    cv2.imwrite(dir + '/' + f +'.png', lanes)
+    if lines is None:
+        print('No lanes found for image #{}'.format(n))
+    else:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(lanes, (x1, y1), (x2, y2), (255), 2)
+        #cv2.imwrite(dir_write + '/' + f +'.png', lanes)
     return np.uint8(lanes)
 
 
@@ -61,7 +70,7 @@ def draw_template(img,offset1,offset2,name):
         y2 = corner[0]
         cv2.line(template, (x1, y1), (x2, y2), (255), 2)
     template = np.uint8(template[center[0]:img.shape[0],corner_left[1]+abs(o2):corner_right[1]-abs(o2)+1])
-    cv2.imwrite(dir + '/' + name + '.png', template)
+    #cv2.imwrite(dir_write + '/' + name + '.png', template)
     return template
 
 
@@ -78,7 +87,7 @@ def templ_matching(lanes,template,img):
     bottom_right = (top_left[0] + w, top_left[1] + h)
     img = img.copy()
     cv2.rectangle(img, top_left, bottom_right, (255), 2)
-    cv2.imwrite(dir + '/' + 'find_lane' + '.png', img)
+    #cv2.imwrite(dir_write + '/' + 'find_lane' + '.png', img)
     return lanes[top_left[1]:bottom_right[1],top_left[0]:bottom_right[0]], (top_left,bottom_right)
 
 
@@ -88,10 +97,7 @@ def align_lanes(img,edges,xy,n):
     img[:, :, 0] = np.clip(img[:,:,0] - highlight*255, 0, None)
     img[:, :, 1] = np.clip(img[:,:,1] - highlight*255, 0, None)
     img[:, :, 2] = np.clip(img[:,:,2] + highlight*255, None, 255)
-    #img[:, :, 0] = img[:,:,0] - highlight
-    #img[:, :, 1] = img[:,:,1] - highlight
-    #img[:, :, 2] = img[:,:,2] + highlight
-    cv2.imwrite(dir + '/' + 'final_img_' + str(n).zfill(3) + '.png', img)
+    cv2.imwrite(dir_write + '/' + 'final_img_' + str(n).zfill(3) + '.png', img)
 
 
 def gaussian_kernel(size, size_y=None):
@@ -102,14 +108,9 @@ def gaussian_kernel(size, size_y=None):
         size_y = int(size_y)
     x, y = np.mgrid[-size:size + 1, -size_y:size_y + 1]
     g = np.exp(-(x ** 2 / float(size) + y ** 2 / float(size_y)))
-    #g = g[int(size) + 1, int(size / 2) + 1:int(int(size) * 1.5) + 1]
-    #g = g[int(size) + 1, int(size / 2) + 1:int(int(size) * 1.5) + 1]
     g = g[int(size) + 1, :]
 
-    #g = g[int(size)+1,int(size/2)+1:int(size)+1]
-    #g = np.concatenate((g,np.flip(g,axis=0)))
-    g = g/np.max(g) #/ g.sum()
-    #g = np.sqrt(g)
+    g = g/np.max(g)
     return g
 
 
@@ -120,44 +121,17 @@ def filter(img):
     filter = np.zeros(img.shape)
     center = int(img.shape[1]/2)
     w = int(img.shape[1]/2)
-    #w = 200
-
-    #g = gaussian_kernel(img.shape[0],w*2)
-    #g = gaussian_kernel(img.shape[0]/2, w)
     g = gaussian_kernel(w)
     g = np.repeat(g.reshape(1,g.size),img.shape[0],axis=0)
     g = abs(1.0001-g)
 
-    #a = np.ones((w*2,img.shape[1]))
-
-    #tx = img.shape[1]/2 - w
-    #ty = 0
-    #M = np.float32([[1, 0, tx], [0, 1, ty]])
-    #g = cv2.warpAffine(g, M, (img.shape[1], img.shape[0]))
-
-    #M = cv2.getRotationMatrix2D((img.shape[1] / 2, img.shape[0] / 2),45, 1)
-    #g = cv2.warpAffine(g, M, (img.shape[1], img.shape[0]))
-    #M = cv2.getRotationMatrix2D((img.shape[1] / 2, img.shape[0] / 2),-45, 1)
-    #g2 = cv2.warpAffine(g, M, (img.shape[1], img.shape[0]))
-    #g = (g1+g2)/2
-
-    #filter[center-w:center+w,:] = g
     filter[:,center - w:center + w] = g[:,:-1]
-    #filter = g
     fshift = fshift*filter
     magnitude_spectrum = 20 * np.log(np.abs(fshift))
 
     a = np.fft.ifftshift(fshift)
     a = np.fft.ifft2(a)
     a = np.real(a)
-
-    #plt.subplot(211), plt.imshow(a, cmap='gray')
-    #plt.title('Input Image'), plt.xticks([]), plt.yticks([])
-    #plt.subplot(212), plt.imshow(magnitude_spectrum, cmap='gray')
-    #plt.title('Magnitude Spectrum'), plt.xticks([]), plt.yticks([])
-
-    #plt.show()
-
     return np.uint8(a)
 
 
@@ -168,59 +142,48 @@ def heuristic_template(img,o1):
     template = np.zeros(img.shape)
     template[template.shape[0]-heur.shape[0]:, o1:template.shape[1]-o1+1] = heur
     img = img*template
-    cv2.imwrite(dir + '/' + 'heur' + '.png', img)
+    #cv2.imwrite(dir_write + '/' + 'heur' + '.png', img)
     return np.uint8(img)
 
 
+def morph_op(img):
+    kernel = np.ones((3, 3), np.uint8)
+    morph = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel)
+    morph = cv2.morphologyEx(morph, cv2.MORPH_CLOSE, kernel)
+    return morph
+
+
 def main():
-    images = np.arange(20)
-    #images = [15]
-    for n in images:
-        im_rgb = load_im(n)
+    set_dirs()
+
+    num_im = 3      # number of images to read from folder (308 files for training folder, 290 for testing)
+    i = 0
+    for n in glob.glob(dir_read+'/*.png'):
+        im_rgb = cv2.imread(n)
+        n = n[-13:-4]
         img = rgb_2_bw(im_rgb)
         #img = filter(img)
 
-        #while sum(edges) <
-        #o1 = int(img.shape[1]/2)-100
-        o1 = 00
-        #lanes = np.zeros(img.shape)
-
         edges = img_pre_process(img)
-        edges = heuristic_template(edges, o1)
-        lanes = Hough_transform(edges, img, 50, 50, 50, 'lanes')
+        edges = heuristic_template(edges, 0)
+        morph = morph_op(edges)
+        #cv2.imwrite(dir_write + '/' + 'morph' + '.png', morph)
 
-        #while sum(sum(lanes))/255 < 300:
-        #    img = heuristic_template(img,o1)
-        #    edges = img_pre_process(img)
-            #lanes = Hough_transform(edges, img,80,20,15,'lanes')
-            #lanes = Hough_transform(edges, img,50,50,50,'lanes')
-            #lanes = Hough_transform(edges, img,50,50,50,'lanes')
-        #    lanes = Hough_transform(edges, img,10,10,50,'lanes')
-            #bounds = Hough_transform(edges, img,150,1,25,'bounds')
-        #    print(sum(sum(lanes))/255, o1)
-        #    o1 = o1 - 100
-
-        #kernel = np.ones((1, 1), np.uint8)
-        #erosion = cv2.morphologyEx(bounds, cv2.MORPH_CLOSE, kernel)
-        #kernel = np.ones((3, 3), np.uint8)
-        #blackhat = cv2.morphologyEx(erosion, cv2.MORPH_BLACKHAT, kernel)
-        #cv2.imwrite(dir + '/' + 'bh' + '.png', blackhat)
-
+        lanes = Hough_transform(morph, img, 50, 50, 50, 'lanes',n)
+        if sum(sum(lanes)) == 0:
+            continue
         template = draw_template(img,25,400,'template')
-        box,xy  = templ_matching(lanes,template,img)
-
+        box,xy = templ_matching(lanes,template,img)
 
         edges = img_pre_process(box)
-        final = Hough_transform(edges, img,70,50,10,'final')
-        #final = Hough_transform(edges, img,80,50,50,'final')
-        #bounds = Hough_transform(edges, img,100,1,50,'bounds')
+        final = Hough_transform(edges, img,70,50,10,'final',n)
+        if sum(sum(final)) == 0:
+            continue
         align_lanes(im_rgb, final[:edges.shape[0],:edges.shape[1]], xy, n)
-        print(n)
-
-
-
-
+        print('Success for image #{}'.format(n))
+        i += 1
+        if i>num_im-1:
+            break
 
 
 main()
-plt.show()
