@@ -5,21 +5,14 @@ from matplotlib import pyplot as plt
 import glob
 
 
-def set_dirs(f = 'D:/Luis/Downloads'):
-    which_dir = ['training','testing']
+def set_dirs(f,which_dir):
     global dir_read
-    dir_read = '{}/data_road/{}/image_2/'.format(f,which_dir[0])
+    dir_read = '{}/data_road/{}/image_2/'.format(f,which_dir)
     global dir_write
     dir_write = dir_read+'results/'
     if not os.path.isdir(dir_write):
         os.mkdir(dir_write)
 
-
-def load_im(num):
-    file = 'um_000'
-    num = str(num).zfill(3)
-    im_rgb = cv2.imread(dir_write + '/' + file + num + '.png')
-    return im_rgb
 
 def rgb_2_bw(im_rgb):
     r = .2989
@@ -35,11 +28,10 @@ def img_pre_process(edges):
     edges = cv2.GaussianBlur(edges, (k, k), 0)
     edges = cv2.Sobel(edges, -1, k2-2, 0, ksize=k2)
     edges = cv2.Canny(edges, 150, 200,L2gradient=False)
-    #cv2.imwrite(dir_write + '/' + 'canny.png', edges)
     return edges
 
 
-def Hough_transform(edges, img, thresh, min_ll, max_lg,f,n):
+def Hough_transform(edges, img, thresh, min_ll, max_lg,n):
     lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180, threshold=thresh, minLineLength=min_ll, maxLineGap=max_lg)
     lanes = np.zeros(img.shape)
     if lines is None:
@@ -48,11 +40,10 @@ def Hough_transform(edges, img, thresh, min_ll, max_lg,f,n):
         for line in lines:
             x1, y1, x2, y2 = line[0]
             cv2.line(lanes, (x1, y1), (x2, y2), (255), 2)
-        #cv2.imwrite(dir_write + '/' + f +'.png', lanes)
     return np.uint8(lanes)
 
 
-def draw_template(img,offset1,offset2,name):
+def draw_template(img,offset1,offset2):
     center = [int(x/2) for x in img.shape]
     corner_left = (img.shape[0],0)
     corner_right = img.shape
@@ -70,7 +61,6 @@ def draw_template(img,offset1,offset2,name):
         y2 = corner[0]
         cv2.line(template, (x1, y1), (x2, y2), (255), 2)
     template = np.uint8(template[center[0]:img.shape[0],corner_left[1]+abs(o2):corner_right[1]-abs(o2)+1])
-    #cv2.imwrite(dir_write + '/' + name + '.png', template)
     return template
 
 
@@ -87,7 +77,6 @@ def templ_matching(lanes,template,img):
     bottom_right = (top_left[0] + w, top_left[1] + h)
     img = img.copy()
     cv2.rectangle(img, top_left, bottom_right, (255), 2)
-    #cv2.imwrite(dir_write + '/' + 'find_lane' + '.png', img)
     return lanes[top_left[1]:bottom_right[1],top_left[0]:bottom_right[0]], (top_left,bottom_right)
 
 
@@ -136,13 +125,12 @@ def filter(img):
 
 
 def heuristic_template(img,o1):
-    heur = draw_template(img, 0, o1,'heur')
+    heur = draw_template(img, 0, o1)
     heur = cv2.floodFill(heur,None, (int(heur.shape[1]/2), heur.shape[0]-1), 255)[1]
     heur = heur/255
     template = np.zeros(img.shape)
     template[template.shape[0]-heur.shape[0]:, o1:template.shape[1]-o1+1] = heur
     img = img*template
-    #cv2.imwrite(dir_write + '/' + 'heur' + '.png', img)
     return np.uint8(img)
 
 
@@ -154,29 +142,30 @@ def morph_op(img):
 
 
 def main():
-    set_dirs()
+    num_im = 50  # number of images to read from folder (308 files for training folder, 290 for testing)
 
-    num_im = 3      # number of images to read from folder (308 files for training folder, 290 for testing)
+    f = os.path.expanduser('~')+'/Downloads'   # directory where the dataset is located
+    set = 'training'
+    set_dirs(f,set)
+
     i = 0
-    for n in glob.glob(dir_read+'/*.png'):
+    for n in sorted(glob.glob(dir_read+'/*.png')):
         im_rgb = cv2.imread(n)
         n = n[-13:-4]
         img = rgb_2_bw(im_rgb)
-        #img = filter(img)
 
         edges = img_pre_process(img)
         edges = heuristic_template(edges, 0)
         morph = morph_op(edges)
-        #cv2.imwrite(dir_write + '/' + 'morph' + '.png', morph)
 
-        lanes = Hough_transform(morph, img, 50, 50, 50, 'lanes',n)
+        lanes = Hough_transform(morph, img, 50, 50, 50, n)
         if sum(sum(lanes)) == 0:
             continue
-        template = draw_template(img,25,400,'template')
+        template = draw_template(img,25,400)
         box,xy = templ_matching(lanes,template,img)
 
         edges = img_pre_process(box)
-        final = Hough_transform(edges, img,70,50,10,'final',n)
+        final = Hough_transform(edges, img,70,50,10,n)
         if sum(sum(final)) == 0:
             continue
         align_lanes(im_rgb, final[:edges.shape[0],:edges.shape[1]], xy, n)
